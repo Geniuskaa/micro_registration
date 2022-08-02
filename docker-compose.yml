@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:12.3-alpine
+    restart: always
+    ports:
+      - "5900:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: test
+      APP_DB_USER: app
+      APP_DB_PASS: pass
+    volumes:
+      - ./scripts/init-database.sh:/docker-entrypoint-initdb.d/init-database.sh
+    container_name: postgres
+    hostname: postgres
