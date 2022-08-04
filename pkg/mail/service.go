@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"github.com/Geniuskaa/micro_registration/pkg/config"
 	"github.com/Geniuskaa/micro_registration/pkg/parser"
+	"github.com/Geniuskaa/micro_registration/pkg/sports/karate"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message/mail"
 	"go.uber.org/zap"
 	"io"
-	"log"
 	"regexp"
 	"strings"
 	"time"
 )
 
-var errWithMsgReading error = errors.New("Проблема с чтением одного или нескольких писем")
+var errWithMsgReading = errors.New("Проблема с чтением одного или нескольких писем")
 
 const (
 	SUBJ_REGEX             = "оревнования\\s[0-9]{2}.[0-9]{2}.[0-9]{4}"
@@ -31,6 +31,10 @@ type Service struct {
 	mailboxes              []*connectionCredentials
 	countOfmailsPerRequest uint32
 	logger                 *zap.Logger
+}
+
+type fileParser interface {
+	ParseXlsx(r io.Reader) (int, int, map[string]interface{}, error)
 }
 
 type connectionCredentials struct {
@@ -70,11 +74,12 @@ func (s *Service) ChangeCountOfMailsPerReq(count uint32) {
 func (s *Service) CheckMails() chan error {
 	errChn := make(chan error, len(s.mailboxes))
 
-	for _, mailBox := range s.mailboxes {
-		go func(errChn chan error, connData *connectionCredentials, count uint32, logger *zap.Logger) {
+	for i, mailBox := range s.mailboxes {
+		go func(errChn chan error, connData *connectionCredentials, count uint32, logger *zap.Logger, i int) {
 			var err error
 			for i := 0; i < COUNT_OF_RECONNECTIONS; i++ {
-				err = readLetters(logger, connData.hostname, connData.port, connData.username, connData.password, count, connData.previousMails)
+				err = readLetters(logger, connData.hostname, connData.port, connData.username, connData.password, count,
+					connData.previousMails, parser.Impl{})
 				if err == nil {
 					return
 				} else if errors.Is(err, errWithMsgReading) {
@@ -88,14 +93,14 @@ func (s *Service) CheckMails() chan error {
 			logger.Error("Unfortunately, we were unable to read mails", zap.String("mail-box: ", connData.username), zap.Error(err))
 			errChn <- err
 
-		}(errChn, mailBox, s.countOfmailsPerRequest, s.logger)
+		}(errChn, mailBox, s.countOfmailsPerRequest, s.logger, i)
 	}
 
 	return errChn
 }
 
 func readLetters(logger *zap.Logger, hostname string, port string, username string, password string,
-	countOfmailsPerRequest uint32, previousMails map[seenLetter]uint8) error {
+	countOfmailsPerRequest uint32, previousMails map[seenLetter]uint8, parser fileParser) error {
 
 	// Connect to server
 	c, err := client.DialTLS(fmt.Sprintf("%s:%s", hostname, port), nil)
@@ -161,7 +166,7 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 		// Print some info about the message
 		header := mr.Header
 
-		date, err := header.Date()
+		dateOfMsg, err := header.Date()
 		if err != nil {
 			logger.Error("header date getting err", zap.Error(fmt.Errorf("header.Date failed: %w", err)))
 			countOfErrs++
@@ -174,6 +179,14 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 			countOfErrs++
 			continue
 		}
+
+		to, err := header.AddressList("To")
+		if err != nil {
+			logger.Error("Header reciever address getting err", zap.Error(fmt.Errorf("header.AddressList failed: %w", err)))
+			countOfErrs++
+			continue
+		}
+		t := regexp.MustCompile("[a-z0-9.]+@[a-z.]+").FindString(to[0].Address)
 		f := regexp.MustCompile("[a-z0-9.]+@[a-z.]+").FindString(from[0].Address)
 
 		subject, err := header.Subject()
@@ -183,8 +196,52 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 			continue
 		}
 
+		matched, err := regexp.MatchString(SUBJ_REGEX, subject)
+		if err != nil {
+			logger.Info("Letter`s subject is unmatch regex", zap.String("source", "readLetters"),
+				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+					dateOfMsg.Format("02-01-2006"), f, t)))
+			continue
+		}
+
+		if !matched {
+			logger.Warn("Letter`s subject is unmatch regex", zap.String("source", "readLetters"),
+				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+					dateOfMsg.Format("02-01-2006"), f, t)))
+			continue
+		}
+
+		// Вторым аргументов идет дата, если не так то ошибка
+		compDateStr := strings.Split(subject, " ")
+
+		isItDate, err := regexp.MatchString("[0-9]{2}.[0-9]{2}.[0-9]{4}", compDateStr[1])
+		if !isItDate {
+			logger.Warn("Second argument of letter subject is not date", zap.String("source", "readLetters"),
+				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+					dateOfMsg.Format("02-01-2006"), f, t)))
+			continue
+		}
+
+		compDate, err := time.Parse("02.01.2006", compDateStr[1])
+		if err != nil {
+			logger.Warn("Subject date parsing err", zap.Error(fmt.Errorf("readLetters failed: %w", err)),
+				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+					dateOfMsg.Format("02-01-2006"), f, t)))
+			continue
+		}
+
+		if time.Now().After(compDate) {
+			logger.Warn("Subject date is non actual", zap.String("letter-info",
+				fmt.Sprintf("msg sent: %s from: %s to: %s",
+					dateOfMsg.Format("02-01-2006"), f, t)))
+			continue
+		}
+
+		//TODO: проверка есть ли вообще соревнование в такую дату? Если есть идем дальше, если нет то пропускаем сообщение
+		// date.Format("02-01-2006")
+
 		newLetter := seenLetter{
-			date: date.Format("02-01-2006"),
+			date: dateOfMsg.Format("02-01-2006"),
 			from: f,
 		}
 		fmt.Println("Ключ для проверки письма: ", newLetter)
@@ -195,7 +252,7 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 		// Если же владелец письма в теме указал 'изменения' и у него есть лимит, необходимого внести изменения в базу
 		if found && restOfCorrections <= 0 {
 			continue
-		} else if restOfCorrections > 0 && !strings.Contains(strings.ToLower(subject), CORRECTIONS_KEY) {
+		} else if found && restOfCorrections > 0 && !strings.Contains(strings.ToLower(subject), CORRECTIONS_KEY) {
 			continue
 		}
 
@@ -204,53 +261,65 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 		//	log.Println(regexp.MustCompile(fmt.Sprintf("From: %s", regexp.MustCompile("[a-z0-9.]+@[a-z.]+").FindString(to[0].Address)))
 		//}
 
-		matched, err := regexp.MatchString(SUBJ_REGEX, subject)
-		if err != nil {
-			logger.Info("Letter`s subject is unmatch regex", zap.String("source", "readLetters"))
-			continue
-		}
-
-		if matched {
-			//TODO: если вышестоящие фильтры пройдены, смотрим на расширение файла и отправляем его в парсер.
-			// Возможно парсер стоит запускать в горутине, где именно это стоит сделать необходимо подумать.
-			for {
-				p, err := mr.NextPart()
-				if err == io.EOF {
-					break
-				} else if err != nil {
-					log.Fatal(err)
-				}
-
-				switch h := p.Header.(type) {
-				case *mail.AttachmentHeader:
-					// This is an attachment
-
-					filename, err := h.Filename()
-					if err != nil {
-						logger.Error("Err filename getting", zap.Error(fmt.Errorf("CheckMails failed: h.Filename: %w", err)))
-						continue
-					}
-					if !strings.HasSuffix(filename, ".xlsx") {
-						continue
-					}
-					log.Println(fmt.Sprintf("Got attachment: %v", filename))
-
-					err = parser.ParseXlsx(p.Body)
-					if err == nil {
-						if found == false {
-							previousMails[newLetter] = COUNT_OF_EDITS //  Добавили прочитанное письмо в виде ключа, и счетчик для исправлений
-						} else {
-							previousMails[newLetter]--
-						}
-					}
-				}
+		//TODO: если вышестоящие фильтры пройдены, смотрим на расширение файла и отправляем его в парсер.
+		// Возможно парсер стоит запускать в горутине, где именно это стоит сделать необходимо подумать.
+		i := 1
+		for {
+			//Это значит, что наш парсер не будет обрабатывать больше чем 1 файл в письме
+			if i == 0 {
+				break
+			}
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				logger.Error("Error getting *mail.Part", zap.Error(fmt.Errorf("mr.NextPart failed: %w", err)),
+					zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+						dateOfMsg.Format("02-01-2006"), f, t)))
+				break
 			}
 
-		} else {
-			logger.Warn("Letter`s subject is unmatch regex", zap.String("source", "CheckMails"))
-			continue
-		}
+			switch h := p.Header.(type) {
+			case *mail.AttachmentHeader:
+				// This is an attachment
+				filename, err := h.Filename()
+				if err != nil {
+					logger.Error("Err filename getting", zap.Error(fmt.Errorf("h.Filename failed: %w", err)),
+						zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+							dateOfMsg.Format("02-01-2006"), f, t)))
+					continue
+				}
+				if !strings.HasSuffix(filename, ".xlsx") {
+					continue
+				}
 
+				i--
+
+				percentOfErrs, uid, m, err := parser.ParseXlsx(p.Body) // пока без горутин и с добавлением в базу. Позже если появится вариант лучше - заменим
+				//TODO: прокинуть данную мапу в слой, который загрузит это в бд
+				fmt.Println(m, uid) //TODO: Удалить это нужно потом
+				fmt.Println("Percent of failed rows is: ", percentOfErrs, "%")
+				for _, v := range m {
+					fmt.Println(v.(karate.Participant))
+				}
+
+				if percentOfErrs > 50 {
+					err = errors.New("Too many mistakes in file.")
+				}
+
+				if err == nil {
+					if !found {
+						previousMails[newLetter] = COUNT_OF_EDITS
+					} else {
+						previousMails[newLetter]--
+					}
+				} else {
+					logger.Error("Xlsx file parsing err", zap.Error(fmt.Errorf("parser.ParseXlsx failed: %w", err)),
+						zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
+							dateOfMsg.Format("02-01-2006"), f, t)))
+				}
+			}
+		}
 	}
 
 	if countOfErrs != 0 {

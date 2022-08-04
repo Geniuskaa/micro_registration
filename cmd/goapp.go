@@ -66,6 +66,33 @@ func execute(addr string, conf *config.Entity) (err error) {
 	pool := database.PoolCreation(ctx, logger, conf) // Panics if something gone wrong
 
 	db := database.NewPostgres(pool)
+
+	//rdb := redis.NewClient(&redis.Options{
+	//	Network:             "",
+	//	Addr:                "",
+	//	Dialer:              nil,
+	//	OnConnect:           nil,
+	//	Username:            "",
+	//	Password:            "",
+	//	CredentialsProvider: nil,
+	//	DB:                  0,
+	//	MaxRetries:          0,
+	//	MinRetryBackoff:     0,
+	//	MaxRetryBackoff:     0,
+	//	DialTimeout:         0,
+	//	ReadTimeout:         0,
+	//	WriteTimeout:        0,
+	//	PoolFIFO:            false,
+	//	PoolSize:            0,
+	//	PoolTimeout:         0,
+	//	MinIdleConns:        0,
+	//	MaxIdleConns:        0,
+	//	ConnMaxIdleTime:     0,
+	//	ConnMaxLifetime:     0,
+	//	TLSConfig:           nil,
+	//	Limiter:             nil,
+	//})
+
 	defer func() {
 		cancel()
 		pool.Close()
