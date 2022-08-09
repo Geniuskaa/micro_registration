@@ -6,6 +6,7 @@ import (
 	"github.com/Geniuskaa/micro_registration/pkg/config"
 	"github.com/Geniuskaa/micro_registration/pkg/database"
 	"github.com/Geniuskaa/micro_registration/pkg/mail"
+	"github.com/Geniuskaa/micro_registration/pkg/sports/karate"
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,7 +33,8 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) Init(atom zap.AtomicLevel, reg *prometheus.Registry) {
-	mailServ := mail.NewService(s.cfg, s.logger)
+	karateServ := karate.NewService(s.db, s.ctx)
+	mailServ := mail.NewService(s.cfg, s.logger, karateServ)
 
 	// Сейчас вызов функции происходит по запросу, в будущем она будет вызываться через сервис (горутина с каналом),
 	// который с опр переодичностью будет проверять почту. Также этот сервис будет делать проверки на ошибки.

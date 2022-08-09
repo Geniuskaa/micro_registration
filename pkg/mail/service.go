@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/Geniuskaa/micro_registration/pkg/config"
@@ -17,6 +18,7 @@ import (
 )
 
 var errWithMsgReading = errors.New("Проблема с чтением одного или нескольких писем")
+var errWithDBWriting = errors.New("Проблема с записью данных в БД")
 
 const (
 	SUBJ_REGEX             = "оревнования\\s[0-9]{2}.[0-9]{2}.[0-9]{4}"
@@ -31,10 +33,12 @@ type Service struct {
 	mailboxes              []*connectionCredentials
 	countOfmailsPerRequest uint32
 	logger                 *zap.Logger
+	karateServ             *karate.Service
+	ctx                    context.Context
 }
 
 type fileParser interface {
-	ParseXlsx(r io.Reader) (int, int, map[string]interface{}, error)
+	ParseXlsx(r io.Reader) (*parser.Response, error)
 }
 
 type connectionCredentials struct {
@@ -50,7 +54,7 @@ type seenLetter struct {
 	from string
 }
 
-func NewService(conf *config.Entity, logger *zap.Logger) *Service {
+func NewService(conf *config.Entity, logger *zap.Logger, karateServ *karate.Service) *Service {
 	mailBoxes := make([]*connectionCredentials, len(conf.Mail.Hostname))
 
 	for i, _ := range conf.Mail.Hostname {
@@ -63,7 +67,7 @@ func NewService(conf *config.Entity, logger *zap.Logger) *Service {
 		}
 	}
 
-	return &Service{mailboxes: mailBoxes, countOfmailsPerRequest: conf.Mail.CountOfMails, logger: logger}
+	return &Service{mailboxes: mailBoxes, countOfmailsPerRequest: conf.Mail.CountOfMails, logger: logger, karateServ: karateServ}
 }
 
 func (s *Service) ChangeCountOfMailsPerReq(count uint32) {
@@ -78,11 +82,11 @@ func (s *Service) CheckMails() chan error {
 		go func(errChn chan error, connData *connectionCredentials, count uint32, logger *zap.Logger, i int) {
 			var err error
 			for i := 0; i < COUNT_OF_RECONNECTIONS; i++ {
-				err = readLetters(logger, connData.hostname, connData.port, connData.username, connData.password, count,
+				err = s.readLetters(connData.hostname, connData.port, connData.username, connData.password, count,
 					connData.previousMails, parser.Impl{})
 				if err == nil {
 					return
-				} else if errors.Is(err, errWithMsgReading) {
+				} else if errors.Is(err, errWithMsgReading) || errors.Is(err, errWithDBWriting) {
 					break
 				}
 
@@ -99,7 +103,7 @@ func (s *Service) CheckMails() chan error {
 	return errChn
 }
 
-func readLetters(logger *zap.Logger, hostname string, port string, username string, password string,
+func (s *Service) readLetters(hostname string, port string, username string, password string,
 	countOfmailsPerRequest uint32, previousMails map[seenLetter]uint8, parser fileParser) error {
 
 	// Connect to server
@@ -151,14 +155,14 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 
 		r := msg.GetBody(&section)
 		if r == nil {
-			logger.Error("Server didn't returned message body", zap.String("source: ", "msg.GetBody"))
+			s.logger.Error("Server didn't returned message body", zap.String("source: ", "msg.GetBody"))
 			countOfErrs++
 			continue
 		}
 
 		mr, err := mail.CreateReader(r)
 		if err != nil {
-			logger.Error("Mail reader creation err", zap.Error(fmt.Errorf("mail.CreateReader failed: %w", err)))
+			s.logger.Error("Mail reader creation err", zap.Error(fmt.Errorf("mail.CreateReader failed: %w", err)))
 			countOfErrs++
 			continue
 		}
@@ -168,21 +172,21 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 
 		dateOfMsg, err := header.Date()
 		if err != nil {
-			logger.Error("header date getting err", zap.Error(fmt.Errorf("header.Date failed: %w", err)))
+			s.logger.Error("header date getting err", zap.Error(fmt.Errorf("header.Date failed: %w", err)))
 			countOfErrs++
 			continue
 		}
 
 		from, err := header.AddressList("From")
 		if err != nil {
-			logger.Error("Header sender address getting err", zap.Error(fmt.Errorf("header.AddressList failed: %w", err)))
+			s.logger.Error("Header sender address getting err", zap.Error(fmt.Errorf("header.AddressList failed: %w", err)))
 			countOfErrs++
 			continue
 		}
 
 		to, err := header.AddressList("To")
 		if err != nil {
-			logger.Error("Header reciever address getting err", zap.Error(fmt.Errorf("header.AddressList failed: %w", err)))
+			s.logger.Error("Header reciever address getting err", zap.Error(fmt.Errorf("header.AddressList failed: %w", err)))
 			countOfErrs++
 			continue
 		}
@@ -191,21 +195,21 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 
 		subject, err := header.Subject()
 		if err != nil {
-			logger.Error("Header subject getting err", zap.Error(fmt.Errorf("header.Subject failed: %w", err)))
+			s.logger.Error("Header subject getting err", zap.Error(fmt.Errorf("header.Subject failed: %w", err)))
 			countOfErrs++
 			continue
 		}
 
 		matched, err := regexp.MatchString(SUBJ_REGEX, subject)
 		if err != nil {
-			logger.Info("Letter`s subject is unmatch regex", zap.String("source", "readLetters"),
+			s.logger.Info("Letter`s subject is unmatch regex", zap.String("source", "readLetters"),
 				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 					dateOfMsg.Format("02-01-2006"), f, t)))
 			continue
 		}
 
 		if !matched {
-			logger.Warn("Letter`s subject is unmatch regex", zap.String("source", "readLetters"),
+			s.logger.Warn("Letter`s subject is unmatch regex", zap.String("source", "readLetters"),
 				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 					dateOfMsg.Format("02-01-2006"), f, t)))
 			continue
@@ -216,7 +220,7 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 
 		isItDate, err := regexp.MatchString("[0-9]{2}.[0-9]{2}.[0-9]{4}", compDateStr[1])
 		if !isItDate {
-			logger.Warn("Second argument of letter subject is not date", zap.String("source", "readLetters"),
+			s.logger.Warn("Second argument of letter subject is not date", zap.String("source", "readLetters"),
 				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 					dateOfMsg.Format("02-01-2006"), f, t)))
 			continue
@@ -224,14 +228,14 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 
 		compDate, err := time.Parse("02.01.2006", compDateStr[1])
 		if err != nil {
-			logger.Warn("Subject date parsing err", zap.Error(fmt.Errorf("readLetters failed: %w", err)),
+			s.logger.Warn("Subject date parsing err", zap.Error(fmt.Errorf("readLetters failed: %w", err)),
 				zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 					dateOfMsg.Format("02-01-2006"), f, t)))
 			continue
 		}
 
 		if time.Now().After(compDate) {
-			logger.Warn("Subject date is non actual", zap.String("letter-info",
+			s.logger.Warn("Subject date is non actual", zap.String("letter-info",
 				fmt.Sprintf("msg sent: %s from: %s to: %s",
 					dateOfMsg.Format("02-01-2006"), f, t)))
 			continue
@@ -273,7 +277,7 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				logger.Error("Error getting *mail.Part", zap.Error(fmt.Errorf("mr.NextPart failed: %w", err)),
+				s.logger.Error("Error getting *mail.Part", zap.Error(fmt.Errorf("mr.NextPart failed: %w", err)),
 					zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 						dateOfMsg.Format("02-01-2006"), f, t)))
 				break
@@ -284,7 +288,7 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 				// This is an attachment
 				filename, err := h.Filename()
 				if err != nil {
-					logger.Error("Err filename getting", zap.Error(fmt.Errorf("h.Filename failed: %w", err)),
+					s.logger.Error("Err filename getting", zap.Error(fmt.Errorf("h.Filename failed: %w", err)),
 						zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 							dateOfMsg.Format("02-01-2006"), f, t)))
 					continue
@@ -295,17 +299,30 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 
 				i--
 
-				percentOfErrs, uid, m, err := parser.ParseXlsx(p.Body) // пока без горутин и с добавлением в базу. Позже если появится вариант лучше - заменим
-				//TODO: прокинуть данную мапу в слой, который загрузит это в бд
-				fmt.Println(m, uid) //TODO: Удалить это нужно потом
-				fmt.Println("Percent of failed rows is: ", percentOfErrs, "%")
-				for _, v := range m {
-					fmt.Println(v.(karate.Participant))
+				response, err := parser.ParseXlsx(p.Body) // пока без горутин и с добавлением в базу. Позже если появится вариант лучше - заменим
+				if err != nil {
+
 				}
 
-				if percentOfErrs > 50 {
+				if response.PercentErrs > 50 {
 					err = errors.New("Too many mistakes in file.")
 				}
+
+				//TODO: прокинуть данную мапу в слой, который загрузит это в бд
+				switch response.SportType {
+				case "KARATE":
+					err = s.karateServ.UploadParticipants(response.Map, response.UUID) // Реализовать метод
+					if err != nil {
+						return errWithDBWriting
+					}
+					for _, v := range response.Map {
+						fmt.Println(v.(karate.Participant))
+					}
+				default:
+
+				}
+				fmt.Println("Percent of failed rows is: ", response.PercentErrs, "%")
+				fmt.Println(response.UUID) //TODO: Удалить это нужно потом
 
 				if err == nil {
 					if !found {
@@ -314,7 +331,7 @@ func readLetters(logger *zap.Logger, hostname string, port string, username stri
 						previousMails[newLetter]--
 					}
 				} else {
-					logger.Error("Xlsx file parsing err", zap.Error(fmt.Errorf("parser.ParseXlsx failed: %w", err)),
+					s.logger.Error("Xlsx file parsing err", zap.Error(fmt.Errorf("parser.ParseXlsx failed: %w", err)),
 						zap.String("letter-info", fmt.Sprintf("msg sent: %s from: %s to: %s",
 							dateOfMsg.Format("02-01-2006"), f, t)))
 				}

@@ -1,3 +1,154 @@
+CREATE DOMAIN mail AS TEXT
+    CHECK(
+            VALUE ~ '^[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+[.][A-Za-z]+$'
+        );
+
+create table organizer (
+    id serial not null primary key,
+    email mail not null unique,
+    num_of_competitions_available integer not null check ( num_of_competitions_available > -1 )
+);
+
+
+create table competition (
+    id bigserial not null primary key,
+    uuid uuid not null unique default uuid_generate_v4(),
+    comp_date date not null,
+    city text not null,
+    sport_type text not null,
+    organizer_name text default 'empty',
+    status text not null check ( status in ('CANCELED', 'ACTIVE', 'FINISHED')) default 'ACTIVE'
+);
+
+create table organizers_competition (
+    id bigserial not null,
+    organizer_id integer references organizer(id) not null,
+    competition_id integer
+);
+
+
+create table karate_category (
+    id serial not null primary key,
+    kata_or_kumite char(3) not null check ( kata_or_kumite in ('кат', 'кум')),
+    sex char(1) not null check ( sex in ('м', 'ж', 'о') ),
+    age int4range not null check ( lower(age) > '5'),
+    kyi int4range default '[1,10]'::int4range,
+    weight int4range default '[,5]'::int4range,
+    group_kata boolean default false
+);
+
+
+create table karate_participant (
+    id bigserial not null primary key,
+    fullname varchar(90) not null,
+    age integer not null check (age > 5),
+    weight float4 check (weight > 10),
+    kyi integer not null check ( kyi < 11 and kyi >= 0),
+    dan integer check ( dan > -1 and dan < 11) default 0,
+    city varchar(30) not null,
+    coach_fullname varchar(50) not null,
+    karate_category_ids integer[] not null,
+    competition_id bigint references competition(id) not null
+);
+
+create or replace procedure add_kata_category_single(sex_arg char(1), age_range int4range) as
+$$
+    BEGIN
+        insert into karate_category (kata_or_kumite, sex, age)
+        values ('кат', sex_arg, age_range);
+    END
+$$
+language plpgsql;
+
+create or replace procedure add_kata_category_group(int4range) as
+$$
+BEGIN
+    insert into karate_category (kata_or_kumite, sex, age, group_kata)
+    values ('кат', 'о', $1, true);
+END
+$$
+    language plpgsql;
+
+
+-- Категории ката добавлять этой функцией
+call add_kata_category_single('о','[10,11]'::int4range);
+call add_kata_category_single('м','[12,13]'::int4range);
+call add_kata_category_single('ж','[12,13]'::int4range);
+call add_kata_category_single('м','[14,15]'::int4range);
+call add_kata_category_single('ж','[14,15]'::int4range);
+call add_kata_category_single('м','[16,17]'::int4range);
+call add_kata_category_single('ж','[16,17]'::int4range);
+call add_kata_category_single('м','[18,]'::int4range);
+call add_kata_category_single('ж','[18,]'::int4range);
+
+call add_kata_category_group('[12,13]'::int4range);
+call add_kata_category_group('[14,15]'::int4range);
+call add_kata_category_group('[16,17]'::int4range);
+call add_kata_category_group('[18,]'::int4range);
+
+
+create or replace procedure add_kumite_category(sex_arg char(1), age_range int4range, weight_range int4range) as
+$$
+BEGIN
+    insert into karate_category (kata_or_kumite, sex, age, weight)
+    values ('кум', sex_arg, age_range, weight_range);
+END
+$$
+    language plpgsql;
+
+call add_kumite_category('м', '[12,13]'::int4range, '[,35]'::int4range);
+call add_kumite_category('м', '[12,13]'::int4range, '[35,40]'::int4range);
+call add_kumite_category('м', '[12,13]'::int4range, '[40,45]'::int4range);
+call add_kumite_category('м', '[12,13]'::int4range, '[45,50]'::int4range);
+call add_kumite_category('м', '[12,13]'::int4range, '[50,55]'::int4range);
+call add_kumite_category('м', '[12,13]'::int4range, '[55,60]'::int4range);
+call add_kumite_category('м', '[12,13]'::int4range, '[60,]'::int4range);
+call add_kumite_category('ж', '[12,13]'::int4range, '[,35]'::int4range);
+call add_kumite_category('ж', '[12,13]'::int4range, '[35,40]'::int4range);
+call add_kumite_category('ж', '[12,13]'::int4range, '[40,45]'::int4range);
+call add_kumite_category('ж', '[12,13]'::int4range, '[45,50]'::int4range);
+call add_kumite_category('ж', '[12,13]'::int4range, '[50,55]'::int4range);
+call add_kumite_category('ж', '[12,13]'::int4range, '[55,]'::int4range);
+
+
+call add_kumite_category('м', '[14,15]'::int4range, '[,45]'::int4range);
+call add_kumite_category('м', '[14,15]'::int4range, '[45,50]'::int4range);
+call add_kumite_category('м', '[14,15]'::int4range, '[50,55]'::int4range);
+call add_kumite_category('м', '[14,15]'::int4range, '[55,60]'::int4range);
+call add_kumite_category('м', '[14,15]'::int4range, '[60,65]'::int4range);
+call add_kumite_category('м', '[14,15]'::int4range, '[65,70]'::int4range);
+call add_kumite_category('м', '[14,15]'::int4range, '[70,]'::int4range);
+call add_kumite_category('ж', '[14,15]'::int4range, '[,45]'::int4range);
+call add_kumite_category('ж', '[14,15]'::int4range, '[45,50]'::int4range);
+call add_kumite_category('ж', '[14,15]'::int4range, '[50,55]'::int4range);
+call add_kumite_category('ж', '[14,15]'::int4range, '[55,]'::int4range);
+
+call add_kumite_category('м', '[16,17]'::int4range, '[,55]'::int4range);
+call add_kumite_category('м', '[16,17]'::int4range, '[55,60]'::int4range);
+call add_kumite_category('м', '[16,17]'::int4range, '[60,65]'::int4range);
+call add_kumite_category('м', '[16,17]'::int4range, '[65,70]'::int4range);
+call add_kumite_category('м', '[16,17]'::int4range, '[70,75]'::int4range);
+call add_kumite_category('м', '[16,17]'::int4range, '[75,80]'::int4range);
+call add_kumite_category('м', '[16,17]'::int4range, '[80,]'::int4range);
+call add_kumite_category('ж', '[16,17]'::int4range, '[,50]'::int4range);
+call add_kumite_category('ж', '[16,17]'::int4range, '[50,55]'::int4range);
+call add_kumite_category('ж', '[16,17]'::int4range, '[55,]'::int4range);
+
+
+call add_kumite_category('м', '[18,]'::int4range, '[,70]'::int4range);
+call add_kumite_category('м', '[18,]'::int4range, '[70,80]'::int4range);
+call add_kumite_category('м', '[18,]'::int4range, '[80,90]'::int4range);
+call add_kumite_category('м', '[18,]'::int4range, '[90,]'::int4range);
+call add_kumite_category('ж', '[18,]'::int4range, '[,55]'::int4range);
+call add_kumite_category('ж', '[18,]'::int4range, '[55,65]'::int4range);
+call add_kumite_category('ж', '[18,]'::int4range, '[65,]'::int4range);
+
+
+
+
+
+
+
 CREATE FUNCTION moddatetime() RETURNS TRIGGER AS
 $$
 BEGIN

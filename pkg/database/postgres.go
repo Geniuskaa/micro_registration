@@ -13,7 +13,6 @@ import (
 
 type Postgres struct {
 	Pool *pgxpool.Pool
-	Repo
 }
 
 func NewPostgres(pool *pgxpool.Pool) *Postgres {
@@ -38,7 +37,4 @@ func PoolCreation(ctx context.Context, logger *zap.Logger, conf *config.Entity) 
 	}
 
 	return pool
-}
-
-type Repo interface {
 }
