@@ -36,9 +36,9 @@ type Response struct {
 	Map         map[string]interface{}
 }
 
-//TODO: парсер будет обрабатывать структуры и закинет все данные в мапу с ключом категория (пол+вес+возраст)
-// затем полученную мапу мы должны передать в валидатор, после получения одобрения от него отправим мапу в репозиторий
-// По UID парсер должен понять какой это вид спорта и использовать соотвествующий парсер
+// Парсер обрабатывает структуры и закинет все данные в мапу с ключом "ФИО"
+//  затем полученную мапу мы должны передать в валидатор, после получения одобрения от него отправим мапу в репозиторий
+//  По UID парсер должен понять какой это вид спорта и использовать соотвествующий парсер
 func (i Impl) ParseXlsx(r io.Reader) (*Response, error) { //(sportType string, percentErrs int, uuidVal int, m map[string]interface{}, err error)
 	resp := &Response{}
 
@@ -49,7 +49,6 @@ func (i Impl) ParseXlsx(r io.Reader) (*Response, error) { //(sportType string, p
 
 	defer func() {
 		if err := f.Close(); err != nil {
-			//x.logger.Panic("", zap.Error(err)) что то с этим сделать
 		}
 	}()
 
@@ -75,7 +74,7 @@ func (i Impl) ParseXlsx(r io.Reader) (*Response, error) { //(sportType string, p
 	// По UID мы найдем соревнование в БД
 	resp.UUID = rows[1][0]
 
-	// TODO: обращение в REDIS
+	// TODO: обращение в REDIS и возврат вида спорта
 	sportType := KARATE
 
 	switch sportType {
@@ -86,7 +85,7 @@ func (i Impl) ParseXlsx(r io.Reader) (*Response, error) { //(sportType string, p
 		}
 		resp.PercentErrs = percentErrs
 		resp.Map = m
-		resp.SportType = KARATE
+		resp.SportType = sportType
 
 		return resp, nil
 	default:
@@ -183,8 +182,6 @@ func karateParser(arr [][]string) (percentErrs int, m map[string]interface{}, er
 	totalParticipants := len(arr) - COUNT_OF_METAINFO_ROWS - countOfEmptyRows
 	percentErrs = countOfErrs / totalParticipants * 100
 
-	fmt.Println("Count of empty rows is: ", countOfEmptyRows)
-
 	return percentErrs, m, nil
 }
 
@@ -227,14 +224,14 @@ func rowKarateConverterKumite(arr []string) (age, kyi, dan uint8, cat pgtype.Int
 			return 0, 0, 0, pgtype.Int4range{}, false, 0, err
 		}
 		if age >= 18 {
-			err = cat.Set(fmt.Sprintf("[%d,%d)", upper-10, upper+1)) //TODO: он создаст интервал, но т.к в базе такой категории
-			// нет, он не добавит этого юзера
+			err = cat.Set(fmt.Sprintf("[%d,%d)", upper-10, upper+1))
+
 			if err != nil {
 				return 0, 0, 0, pgtype.Int4range{}, false, 0, err
 			}
 		} else {
-			err = cat.Set(fmt.Sprintf("[%d,%d)", upper-5, upper+1)) //TODO: он создаст интервал, но т.к в базе такой категории
-			// нет, он не добавит этого юзера
+			err = cat.Set(fmt.Sprintf("[%d,%d)", upper-5, upper+1))
+
 			if err != nil {
 				return 0, 0, 0, pgtype.Int4range{}, false, 0, err
 			}

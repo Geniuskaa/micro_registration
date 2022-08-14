@@ -33,6 +33,7 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) Init(atom zap.AtomicLevel, reg *prometheus.Registry) {
+	// Бросает панику, если возникла ошибка при инициализации
 	karateServ := karate.NewService(s.db, s.ctx)
 	mailServ := mail.NewService(s.cfg, s.logger, karateServ)
 
@@ -42,6 +43,7 @@ func (s *Server) Init(atom zap.AtomicLevel, reg *prometheus.Registry) {
 	s.mux.Get("/mail", func(writer http.ResponseWriter, request *http.Request) {
 		mailServ.CheckMails()
 	})
+
 	//serv := user.NewService(s.db, s.logger)
 	//
 	//s.mux.Mount("/internal", technic.NewHandler(s.ctx, s.logger, atom, reg).Routes())
