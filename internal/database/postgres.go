@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
-	"github.com/Geniuskaa/micro_registration/pkg/config"
+	"github.com/Geniuskaa/micro_registration/internal/config"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/log/zapadapter"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -27,9 +27,10 @@ func PoolCreation(ctx context.Context, logger *zap.Logger, conf *config.Entity) 
 	}
 	dbConf.ConnConfig.Logger = zapadapter.NewLogger(logger)
 	dbConf.ConnConfig.LogLevel = pgx.LogLevelError
-	dbConf.MaxConnIdleTime = time.Second * 10
-	dbConf.MaxConns = 150 // при настройке объединения микросервисов стоит
-	dbConf.MinConns = 10  // учесть макс соединения на сервисе и в БД
+	dbConf.MaxConnLifetime = time.Minute * time.Duration(conf.DB.ConnLifeTime)
+	dbConf.MaxConnIdleTime = time.Second * 25
+	dbConf.MaxConns = conf.DB.MaxOpenConns // при настройке объединения микросервисов стоит
+	dbConf.MinConns = conf.DB.MinConns     // учесть макс соединения на сервисе и в БД
 
 	pool, err := pgxpool.ConnectConfig(ctx, dbConf)
 	if err != nil {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Geniuskaa/micro_registration/pkg/config"
-	"github.com/Geniuskaa/micro_registration/pkg/parser"
-	"github.com/Geniuskaa/micro_registration/pkg/sports/karate"
+	"github.com/Geniuskaa/micro_registration/internal/config"
+	"github.com/Geniuskaa/micro_registration/internal/parser"
+	"github.com/Geniuskaa/micro_registration/internal/sports/karate"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message/mail"
@@ -72,6 +72,10 @@ type seenLetter struct {
 	date string
 	from string
 }
+
+//type SportService interface {
+//	SportName() string
+//}
 
 func NewService(conf *config.Entity, logger *zap.Logger, karateServ *karate.Service) *Service {
 	mailBoxes := make([]connectionCredentials, len(conf.Mail.Hostname))

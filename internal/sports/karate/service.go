@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Geniuskaa/micro_registration/pkg/database"
+	"github.com/Geniuskaa/micro_registration/internal/database"
 	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -16,6 +16,10 @@ type Service struct {
 	ctx        context.Context
 	categories map[string]map[pgtype.Int4range]map[string]*catIdLeaf
 }
+
+//func (s *Service) SportName() string  {
+//	return "karate"
+//}
 
 type competitionCategory struct {
 	id         int

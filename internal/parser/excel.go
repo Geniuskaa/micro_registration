@@ -3,7 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"github.com/Geniuskaa/micro_registration/pkg/sports/karate"
+	"github.com/Geniuskaa/micro_registration/internal/sports/karate"
 	"github.com/jackc/pgtype"
 	"github.com/xuri/excelize/v2"
 	"io"
@@ -37,8 +37,9 @@ type Response struct {
 }
 
 // Парсер обрабатывает структуры и закинет все данные в мапу с ключом "ФИО"
-//  затем полученную мапу мы должны передать в валидатор, после получения одобрения от него отправим мапу в репозиторий
-//  По UID парсер должен понять какой это вид спорта и использовать соотвествующий парсер
+//
+//	затем полученную мапу мы должны передать в валидатор, после получения одобрения от него отправим мапу в репозиторий
+//	По UID парсер должен понять какой это вид спорта и использовать соотвествующий парсер
 func (i Impl) ParseXlsx(r io.Reader) (*Response, error) { //(sportType string, percentErrs int, uuidVal int, m map[string]interface{}, err error)
 	resp := &Response{}
 

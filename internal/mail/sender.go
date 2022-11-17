@@ -74,7 +74,6 @@ func (s *Service) responseToLetter(to string, subject string, mailboxData connec
 		return err
 	}
 
-	fmt.Println("По идее письмо должно было отправиться....")
 	return nil
 }
 

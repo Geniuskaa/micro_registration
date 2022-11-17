@@ -10,19 +10,22 @@ import (
 )
 
 const (
-	APP_PORT            = "APP_PORT"
-	APP_HOST            = "APP_HOST"
-	DB_HOST             = "DB_HOST"
-	DB_NAME             = "DB_NAME"
-	DB_USERNAME         = "DB_USERNAME"
-	DB_PASS             = "DB_PASS"
-	DB_PORT             = "DB_PORT"
-	JAG_DSN             = "JAG_DSN"
-	MAIL_HOST           = "MAIL_HOST"
-	MAIL_PORT           = "MAIL_PORT"
-	MAIL_USERNAME       = "MAIL_USERNAME"
-	MAIL_PASSWORD       = "MAIL_PASSWORD"
-	MAIL_COUNT_OF_MAILS = "MAIL_COUNT_OF_MAILS"
+	APP_PORT                 = "APP_PORT"
+	APP_HOST                 = "APP_HOST"
+	DB_HOST                  = "DB_HOST"
+	DB_NAME                  = "DB_NAME"
+	DB_USERNAME              = "DB_USERNAME"
+	DB_PASS                  = "DB_PASS"
+	DB_PORT                  = "DB_PORT"
+	DB_CONN_MAX_LIFE_MINUTES = "DB_CONN_MAX_LIFE_MINUTES"
+	DB_MAX_OPEN_CONNS        = "DB_MAX_OPEN_CONNS"
+	DB_MIN_CONNS             = "DB_MIN_CONNS"
+	JAG_DSN                  = "JAG_DSN"
+	MAIL_HOST                = "MAIL_HOST"
+	MAIL_PORT                = "MAIL_PORT"
+	MAIL_USERNAME            = "MAIL_USERNAME"
+	MAIL_PASSWORD            = "MAIL_PASSWORD"
+	MAIL_COUNT_OF_MAILS      = "MAIL_COUNT_OF_MAILS"
 )
 
 type Entity struct {
@@ -72,7 +75,7 @@ func NewConfig() (*Entity, error) {
 		CountOfMails: temp.CountOfMails,
 	}
 
-	config := &Entity{Mail: *mail,}
+	config := &Entity{Mail: *mail}
 
 	if !readFile {
 
@@ -82,11 +85,14 @@ func NewConfig() (*Entity, error) {
 		}
 
 		config.DB = Database{
-			Hostname: viper.GetString(DB_HOST),
-			Name:     viper.GetString(DB_NAME),
-			User:     viper.GetString(DB_USERNAME),
-			Pass:     viper.GetString(DB_PASS),
-			Port:     uint16(viper.GetUint32(DB_PORT)),
+			Hostname:     viper.GetString(DB_HOST),
+			Name:         viper.GetString(DB_NAME),
+			User:         viper.GetString(DB_USERNAME),
+			Pass:         viper.GetString(DB_PASS),
+			Port:         uint16(viper.GetUint32(DB_PORT)),
+			ConnLifeTime: viper.GetInt(DB_CONN_MAX_LIFE_MINUTES),
+			MaxOpenConns: viper.GetInt32(DB_MAX_OPEN_CONNS),
+			MinConns:     viper.GetInt32(DB_MIN_CONNS),
 		}
 
 		config.Jag = Jaeger{viper.GetString(JAG_DSN)}
@@ -123,11 +129,14 @@ type Application struct {
 }
 
 type Database struct {
-	Hostname string `mapstructure:"DB_HOST"`
-	Name     string `mapstructure:"DB_NAME"`
-	User     string `mapstructure:"DB_USERNAME"`
-	Pass     string `mapstructure:"DB_PASS"`
-	Port     uint16 `mapstructure:"DB_PORT"`
+	Hostname     string `mapstructure:"DB_HOST"`
+	Name         string `mapstructure:"DB_NAME"`
+	User         string `mapstructure:"DB_USERNAME"`
+	Pass         string `mapstructure:"DB_PASS"`
+	Port         uint16 `mapstructure:"DB_PORT"`
+	ConnLifeTime int    `mapstructure:"DB_CONN_MAX_LIFE_MINUTES"`
+	MaxOpenConns int32  `mapstructure:"DB_MAX_OPEN_CONNS"`
+	MinConns     int32  `mapstructure:"DB_MIN_CONNS"`
 }
 
 type Jaeger struct {
