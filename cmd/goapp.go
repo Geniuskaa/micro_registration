@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"github.com/Geniuskaa/micro_registration/internal/config"
-	"github.com/Geniuskaa/micro_registration/internal/database"
-	"github.com/Geniuskaa/micro_registration/internal/server"
+	"github.com/Geniuskaa/micro_registration/pkg/config"
+	"github.com/Geniuskaa/micro_registration/pkg/database"
+	"github.com/Geniuskaa/micro_registration/pkg/server"
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
